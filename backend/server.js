@@ -35,6 +35,11 @@ const connectDB = async () => {
     await mongoose.connect(MONGODB_URI, {
       serverSelectionTimeoutMS: 5000, 
       connectTimeoutMS: 10000,
+      serverApi: {
+        version: '1',
+        strict: true,
+        deprecationErrors: true,
+      }
     });
     console.log('Connected to MongoDB');
   } catch (err) {
