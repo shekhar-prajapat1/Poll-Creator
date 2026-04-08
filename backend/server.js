@@ -100,9 +100,22 @@ app.post('/api/polls', async (req, res) => {
       creatorToken: newPoll.creatorToken
     });
   } catch (err) {
-    console.error('Error creating poll:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('SERVER ERROR: POST /api/polls failed:', err.message || err);
+    res.status(500).json({ error: 'Database error while creating poll.', details: err.message });
   }
+});
+
+/**
+ * @route GET /api/health
+ * @desc Check server and database health
+ */
+app.get('/api/health', (req, res) => {
+  const isConnected = mongoose.connection.readyState === 1;
+  res.json({
+    status: isConnected ? 'healthy' : 'unhealthy',
+    database: isConnected ? 'connected' : 'disconnected',
+    timestamp: new Date()
+  });
 });
 
 /**

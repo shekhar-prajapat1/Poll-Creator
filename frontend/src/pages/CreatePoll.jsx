@@ -46,8 +46,8 @@ const CreatePoll = () => {
       // Store creator token
       localStorage.setItem(`creator_token_${response.data.id}`, response.data.creatorToken);
     } catch (err) {
-      console.error('Error creating poll:', err);
-      alert('Failed to create poll. Please try again.');
+      console.error('SERVER ERROR Details:', err.response?.data || err.message);
+      alert(err.response?.data?.error || 'Failed to create poll. Please try again.');
     } finally {
       setLoading(false);
     }
