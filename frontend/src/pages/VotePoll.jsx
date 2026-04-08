@@ -4,7 +4,7 @@ import axios from 'axios';
 import { Check, Info, BarChart2, Clock } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-const API_BASE_URL = '/api';
+const API_BASE_URL = '/_/backend/api';
 
 const VotePoll = () => {
   const { id } = useParams();

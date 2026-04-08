@@ -3,7 +3,7 @@ import axios from 'axios';
 import { Plus, Trash2, Calendar, CheckSquare, Send, Copy, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const API_BASE_URL = '/api';
+const API_BASE_URL = '/_/backend/api';
 
 const CreatePoll = () => {
   const [question, setQuestion] = useState('');

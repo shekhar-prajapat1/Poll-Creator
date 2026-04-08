@@ -4,7 +4,7 @@ import axios from 'axios';
 import { BarChart, Share2, Copy, Check, Lock, Unlock, RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-const API_BASE_URL = '/api';
+const API_BASE_URL = '/_/backend/api';
 
 const PollResults = () => {
   const { id } = useParams();
