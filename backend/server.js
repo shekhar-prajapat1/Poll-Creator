@@ -7,6 +7,14 @@ const { v4: uuidv4 } = require('uuid');
 const app = express();
 const PORT = process.env.PORT || 5000;
 const MONGODB_URI = process.env.MONGODB_URI;
+
+// DEBUG: Log startup configuration (safe characters only)
+if (!MONGODB_URI) {
+  console.error('SERVER ERROR: MONGODB_URI is UNDEFINED. Please check Vercel Environment Variables.');
+} else {
+  console.log('SERVER STARTUP: MONGODB_URI is defined (starts with:', MONGODB_URI.substring(0, 10) + '...)');
+}
+
 // Using robust Standard Connection String format to ensure DNS stability on Vercel
 console.log('DEBUG: MONGODB_URI starts with:', MONGODB_URI ? `${MONGODB_URI.substring(0, 15)}...` : 'UNDEFINED');
 
@@ -18,9 +26,14 @@ app.use(express.json());
 const connectDB = async () => {
   if (mongoose.connection.readyState >= 1) return;
   
+  if (!MONGODB_URI) {
+    console.error('DATABASE ERROR: Cannot connect. MONGODB_URI is not set.');
+    return;
+  }
+  
   try {
     await mongoose.connect(MONGODB_URI, {
-      serverSelectionTimeoutMS: 5000, // Fail fast (5s) instead of hanging
+      serverSelectionTimeoutMS: 5000, 
       connectTimeoutMS: 10000,
     });
     console.log('Connected to MongoDB');
