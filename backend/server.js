@@ -6,84 +6,69 @@ const { v4: uuidv4 } = require('uuid');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const MONGODB_URI = process.env.MONGODB_URI;
-
-// DEBUG: Log startup configuration (safe characters only)
-if (!MONGODB_URI) {
-  console.error('SERVER ERROR: MONGODB_URI is UNDEFINED. Please check Vercel Environment Variables.');
-} else {
-  console.log('SERVER STARTUP: MONGODB_URI is defined (starts with:', MONGODB_URI.substring(0, 10) + '...)');
-}
-
-// Using robust Standard Connection String format to ensure DNS stability on Vercel
-console.log('DEBUG: MONGODB_URI starts with:', MONGODB_URI ? `${MONGODB_URI.substring(0, 15)}...` : 'UNDEFINED');
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 
-// --- MongoDB Configuration ---
+// --- MongoDB Connection ---
 const connectDB = async () => {
-  if (mongoose.connection.readyState >= 1) return;
-  
-  if (!MONGODB_URI) {
-    console.error('DATABASE ERROR: Cannot connect. MONGODB_URI is not set.');
-    return;
-  }
-  
   try {
-    await mongoose.connect(MONGODB_URI, {
-      serverSelectionTimeoutMS: 5000, 
-      connectTimeoutMS: 10000,
+    if (!process.env.MONGODB_URI) {
+      throw new Error("MONGODB_URI not defined in environment variables");
+    }
+
+    await mongoose.connect(process.env.MONGODB_URI, {
       serverApi: {
         version: '1',
         strict: true,
         deprecationErrors: true,
       }
     });
-    console.log('Connected to MongoDB');
+    console.log("✅ MongoDB Connected");
   } catch (err) {
-    console.error('MongoDB connection error:', err.message);
+    console.error("❌ MongoDB Connection Error:", err.message);
+    process.exit(1); // stop server if DB fails
   }
 };
 
-// Initiate connection but don't block the event loop
+// Connect once at startup
 connectDB();
 
+// --- Schema ---
 const pollSchema = new mongoose.Schema({
   id: { type: String, required: true, unique: true },
   question: { type: String, required: true },
-  options: [{
-    id: { type: String, required: true },
-    text: { type: String, required: true },
-    votes: { type: Number, default: 0 }
-  }],
+  options: [
+    {
+      id: { type: String, required: true },
+      text: { type: String, required: true },
+      votes: { type: Number, default: 0 }
+    }
+  ],
   allowMultiple: { type: Boolean, default: false },
   expiresAt: { type: Date },
   createdAt: { type: Date, default: Date.now },
-  voters: [String], // IP addresses
-  status: { type: String, default: 'active', enum: ['active', 'closed'] },
+  voters: [String],
+  status: { type: String, default: 'active' },
   creatorToken: { type: String, required: true }
 });
 
 const Poll = mongoose.model('Poll', pollSchema);
 
-/**
- * Helper: Calculate poll results (percentages)
- */
+// --- Helper ---
 const calculateResults = (poll) => {
   const totalVotes = poll.options.reduce((sum, opt) => sum + opt.votes, 0);
-  const optionsWithPercentage = poll.options.map(opt => ({
-    id: opt.id,
-    text: opt.text,
-    votes: opt.votes,
-    percentage: totalVotes === 0 ? 0 : Math.round((opt.votes / totalVotes) * 100)
-  }));
-  
+
   return {
     id: poll.id,
     question: poll.question,
-    options: optionsWithPercentage,
+    options: poll.options.map(opt => ({
+      id: opt.id,
+      text: opt.text,
+      votes: opt.votes,
+      percentage: totalVotes === 0 ? 0 : Math.round((opt.votes / totalVotes) * 100)
+    })),
     totalVotes,
     allowMultiple: poll.allowMultiple,
     expiresAt: poll.expiresAt,
@@ -91,29 +76,33 @@ const calculateResults = (poll) => {
   };
 };
 
-// --- API Endpoints ---
+// --- Routes ---
 
-/**
- * @route POST /api/polls
- * @desc Create a new poll
- */
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: "ok",
+    db: mongoose.connection.readyState === 1 ? "connected" : "disconnected"
+  });
+});
+
+// Create poll
 app.post('/api/polls', async (req, res) => {
-  await connectDB();
-  const { question, options, allowMultiple, expiresAt } = req.body;
-
-  if (!question || !options || !Array.isArray(options) || options.length < 2) {
-    return res.status(400).json({ error: 'Question and at least 2 options are required.' });
-  }
-
-  const pollId = 'poll_' + uuidv4().slice(0, 8);
-  const creatorToken = uuidv4();
-
   try {
+    const { question, options, allowMultiple, expiresAt } = req.body;
+
+    if (!question || !Array.isArray(options) || options.length < 2) {
+      return res.status(400).json({ error: "Question and at least 2 options required" });
+    }
+
+    const pollId = 'poll_' + uuidv4().slice(0, 8);
+    const creatorToken = uuidv4();
+
     const newPoll = new Poll({
       id: pollId,
       question,
-      options: options.map((opt, index) => ({
-        id: `opt_${index + 1}`,
+      options: options.map((opt, i) => ({
+        id: `opt_${i + 1}`,
         text: opt,
         votes: 0
       })),
@@ -126,85 +115,54 @@ app.post('/api/polls', async (req, res) => {
 
     res.status(201).json({
       id: newPoll.id,
-      question: newPoll.question,
-      options: newPoll.options,
-      createdAt: newPoll.createdAt,
-      expiresAt: newPoll.expiresAt,
       shareUrl: `/poll/${pollId}`,
-      creatorToken: newPoll.creatorToken
+      creatorToken
     });
+
   } catch (err) {
-    console.error('SERVER ERROR: POST /api/polls failed:', err.message || err);
-    res.status(500).json({ error: 'Database error while creating poll.', details: err.message });
+    console.error("CREATE POLL ERROR:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 
-/**
- * @route GET /api/health
- * @desc Check server and database health
- */
-app.get('/api/health', (req, res) => {
-  const isConnected = mongoose.connection.readyState === 1;
-  res.json({
-    status: isConnected ? 'healthy' : 'unhealthy',
-    database: isConnected ? 'connected' : 'disconnected',
-    timestamp: new Date()
-  });
-});
-
-/**
- * @route GET /api/polls/:id
- * @desc Get poll details
- */
+// Get poll
 app.get('/api/polls/:id', async (req, res) => {
-  await connectDB();
   try {
     const poll = await Poll.findOne({ id: req.params.id });
 
     if (!poll) {
-      return res.status(404).json({ error: 'Poll not found.' });
+      return res.status(404).json({ error: "Poll not found" });
     }
 
-    // Check if poll has expired
-    if (poll.expiresAt && new Date() > new Date(poll.expiresAt) && poll.status === 'active') {
+    // Expiry check
+    if (poll.expiresAt && new Date() > poll.expiresAt) {
       poll.status = 'closed';
       await poll.save();
     }
 
     res.json(calculateResults(poll));
+
   } catch (err) {
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: err.message });
   }
 });
 
-/**
- * @route POST /api/polls/:id/vote
- * @desc Submit a vote
- */
+// Vote
 app.post('/api/polls/:id/vote', async (req, res) => {
-  await connectDB();
-  const { optionId } = req.body;
-  const userIp = req.ip || req.headers['x-forwarded-for'] || 'unknown';
-
   try {
+    const { optionId } = req.body;
+    const userIp = req.ip;
+
     const poll = await Poll.findOne({ id: req.params.id });
 
-    if (!poll) {
-      return res.status(404).json({ error: 'Poll not found.' });
-    }
-
-    if (poll.status === 'closed') {
-      return res.status(400).json({ error: 'This poll is closed.' });
-    }
-
-    // Prevent duplicate votes by IP
+    if (!poll) return res.status(404).json({ error: "Poll not found" });
+    if (poll.status === 'closed') return res.status(400).json({ error: "Poll closed" });
     if (poll.voters.includes(userIp)) {
-      return res.status(403).json({ error: 'You have already voted on this poll.' });
+      return res.status(403).json({ error: "Already voted" });
     }
 
     const optionIds = Array.isArray(optionId) ? optionId : [optionId];
 
-    // Update votes
     let updated = false;
     poll.options.forEach(opt => {
       if (optionIds.includes(opt.id)) {
@@ -214,49 +172,42 @@ app.post('/api/polls/:id/vote', async (req, res) => {
     });
 
     if (!updated) {
-      return res.status(400).json({ error: 'Invalid option selected.' });
+      return res.status(400).json({ error: "Invalid option" });
     }
 
     poll.voters.push(userIp);
     await poll.save();
 
-    res.json({
-      success: true,
-      poll: calculateResults(poll)
-    });
+    res.json({ success: true, poll: calculateResults(poll) });
+
   } catch (err) {
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: err.message });
   }
 });
 
-/**
- * @route POST /api/polls/:id/close
- * @desc Manually close a poll (requires creator token)
- */
+// Close poll
 app.post('/api/polls/:id/close', async (req, res) => {
-  const { creatorToken } = req.body;
-
   try {
+    const { creatorToken } = req.body;
+
     const poll = await Poll.findOne({ id: req.params.id });
 
-    if (!poll) {
-      return res.status(404).json({ error: 'Poll not found.' });
-    }
-
+    if (!poll) return res.status(404).json({ error: "Poll not found" });
     if (poll.creatorToken !== creatorToken) {
-      return res.status(401).json({ error: 'Unauthorized to close this poll.' });
+      return res.status(401).json({ error: "Unauthorized" });
     }
 
     poll.status = 'closed';
     await poll.save();
 
     res.json({ success: true, poll: calculateResults(poll) });
+
   } catch (err) {
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: err.message });
   }
 });
 
-// Start server
+// --- Start Server ---
 app.listen(PORT, () => {
-  console.log(`Poll Backend running on http://localhost:${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
