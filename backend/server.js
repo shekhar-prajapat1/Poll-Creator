@@ -7,6 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 const app = express();
 const PORT = process.env.PORT || 5000;
 const MONGODB_URI = process.env.MONGODB_URI;
+console.log('DEBUG: MONGODB_URI starts with:', MONGODB_URI ? `${MONGODB_URI.substring(0, 15)}...` : 'UNDEFINED');
 
 // Middleware
 app.use(cors());
