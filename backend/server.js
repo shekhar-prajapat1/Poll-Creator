@@ -15,9 +15,22 @@ app.use(cors());
 app.use(express.json());
 
 // --- MongoDB Configuration ---
-mongoose.connect(MONGODB_URI)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch(err => console.error('MongoDB connection error:', err));
+const connectDB = async () => {
+  if (mongoose.connection.readyState >= 1) return;
+  
+  try {
+    await mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 5000, // Fail fast (5s) instead of hanging
+      connectTimeoutMS: 10000,
+    });
+    console.log('Connected to MongoDB');
+  } catch (err) {
+    console.error('MongoDB connection error:', err.message);
+  }
+};
+
+// Initiate connection but don't block the event loop
+connectDB();
 
 const pollSchema = new mongoose.Schema({
   id: { type: String, required: true, unique: true },
@@ -67,6 +80,7 @@ const calculateResults = (poll) => {
  * @desc Create a new poll
  */
 app.post('/api/polls', async (req, res) => {
+  await connectDB();
   const { question, options, allowMultiple, expiresAt } = req.body;
 
   if (!question || !options || !Array.isArray(options) || options.length < 2) {
@@ -125,6 +139,7 @@ app.get('/api/health', (req, res) => {
  * @desc Get poll details
  */
 app.get('/api/polls/:id', async (req, res) => {
+  await connectDB();
   try {
     const poll = await Poll.findOne({ id: req.params.id });
 
@@ -149,6 +164,7 @@ app.get('/api/polls/:id', async (req, res) => {
  * @desc Submit a vote
  */
 app.post('/api/polls/:id/vote', async (req, res) => {
+  await connectDB();
   const { optionId } = req.body;
   const userIp = req.ip || req.headers['x-forwarded-for'] || 'unknown';
 
