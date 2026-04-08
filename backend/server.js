@@ -7,6 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 const app = express();
 const PORT = process.env.PORT || 5000;
 const MONGODB_URI = process.env.MONGODB_URI;
+// Using robust Standard Connection String format to ensure DNS stability on Vercel
 console.log('DEBUG: MONGODB_URI starts with:', MONGODB_URI ? `${MONGODB_URI.substring(0, 15)}...` : 'UNDEFINED');
 
 // Middleware
