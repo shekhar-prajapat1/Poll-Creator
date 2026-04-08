@@ -6,7 +6,10 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/_/backend': 'http://localhost:5000'
+      '/_/backend': {
+        target: 'http://localhost:5000',
+        rewrite: (path) => path.replace(/^\/_\/backend/, '')
+      }
     }
   }
 })
